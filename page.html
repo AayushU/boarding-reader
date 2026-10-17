@@ -1,0 +1,114 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes"><link rel="manifest" href="manifest.json">
+<link rel="preload" href="data.bin" as="fetch" crossorigin>
+<title>Boarding Reader</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--fg:#151515;--mut:#666;--line:#e3e3df;--acc:#0b5cad}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1e1e1e;--fg:#ececec;--mut:#9a9a9a;--line:#2c2c2c;--acc:#6aa8ff}}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+[hidden]{display:none!important}
+header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top))}
+.row{display:flex;gap:8px;max-width:760px;margin:0 auto}
+h1{font-size:18px;margin:0 auto 8px;max-width:760px;display:flex;justify-content:space-between;align-items:baseline}
+h1 small{font-weight:400;font-size:12px;color:var(--mut)}
+input,select,button{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
+input,select{flex:1;min-width:0}select{flex:0 1 40%}button{cursor:pointer}
+main{max-width:760px;margin:0 auto;padding:12px 16px 40px;display:grid;gap:12px}
+@media (min-width:700px){main#list{grid-template-columns:1fr 1fr}}
+article.c{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;content-visibility:auto;contain-intrinsic-size:auto 360px}
+article.c a{color:inherit;text-decoration:none;display:block}
+article.c img{display:block;width:100%;height:auto;max-height:240px;object-fit:cover;background:var(--line)}
+.b{padding:12px 14px 14px}h2{font-size:17px;line-height:1.3;margin:0 0 4px}
+.m{margin:0 0 6px;font-size:13px;color:var(--mut)}.x{margin:0;font-size:15px;opacity:.85}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+article.c.read h2{color:var(--mut)}
+.msg{color:var(--mut);text-align:center;padding:40px 16px}
+#lock{max-width:360px;margin:20vh auto 0;padding:0 16px;display:grid;gap:10px}
+#reader{max-width:680px;margin:0 auto;padding:12px 16px 60px}
+#reader .top{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;background:var(--bg);padding:8px 0;padding-top:max(8px,env(safe-area-inset-top));border-bottom:1px solid var(--line);z-index:2}
+#reader a.o{color:var(--acc);font-size:15px}
+#reader h1{display:block;font-size:24px;line-height:1.25;margin:16px 0 6px}
+#body{font-size:18px;line-height:1.6;overflow-wrap:anywhere}
+#body img{max-width:100%;height:auto;border-radius:8px;display:block;margin:8px auto}
+#body figure{margin:16px 0}#body figcaption{font-size:13px;color:var(--mut);text-align:center}
+#body a{color:var(--acc)}#body blockquote{margin:16px 0;padding-left:14px;border-left:3px solid var(--line);color:var(--mut)}
+#body table{display:block;overflow-x:auto;border-collapse:collapse;font-size:15px}#body td,#body th{border:1px solid var(--line);padding:4px 8px}
+#body pre{overflow-x:auto}
+footer{text-align:center;color:var(--mut);font-size:12px;padding:0 16px 30px}
+</style></head><body>
+<form id="lock" hidden><h1>Boarding Reader</h1><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button>Open</button><p class="msg" id="lmsg" style="padding:0"></p></form>
+<div id="app" hidden>
+<header><h1>Boarding Reader <small id="u"></small></h1>
+<div class="row"><input id="q" type="search" placeholder="Filter headlines" autocomplete="off"><select id="a"><option value="">All blogs</option></select></div></header>
+<main id="list"></main>
+<footer>From BoardingArea and its blogs' public RSS feeds. "Full" posts are readable here; the rest open on the original blog.</footer>
+</div>
+<div id="reader" hidden><div class="top"><button id="back">‹ Back</button><a class="o" id="orig" rel="noopener noreferrer" target="_blank">Open original ↗</a></div>
+<h1 id="rt"></h1><p class="m" id="rm"></p><div id="body"></div>
+<p><a class="o" id="orig2" rel="noopener noreferrer" target="_blank">Read on the original blog, with comments ↗</a></p></div>
+<p class="msg" id="loading">Loading…</p>
+<script>
+(async()=>{
+const $=(id)=>document.getElementById(id),ls={get:(k)=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:(k)=>{try{localStorage.removeItem(k)}catch{}}};
+const esc=(s)=>String(s??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+const rel=(d)=>{const s=(Date.now()-new Date(d))/1e3;if(s<3600)return Math.max(1,Math.round(s/60))+"m ago";if(s<86400)return Math.round(s/3600)+"h ago";if(s<604800)return Math.round(s/86400)+"d ago";return d.slice(0,10)};
+const buf=await fetch("data.bin",{cache:"no-cache"}).then(r=>r.arrayBuffer()).catch(()=>null);
+$("loading").hidden=true;
+if(!buf){$("loading").textContent="Couldn't load the feed. Pull to refresh.";$("loading").hidden=false;return}
+const b=new Uint8Array(buf);
+async function open(pw){
+  const base=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveKey"]);
+  const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b.slice(0,16),iterations:150000,hash:"SHA-256"},base,{name:"AES-GCM",length:256},false,["decrypt"]);
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:b.slice(16,28)},key,b.slice(28));
+  const txt=await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  return JSON.parse(txt);
+}
+let data=null;const saved=ls.get("ba-pw");
+if(saved){try{data=await open(saved)}catch{ls.del("ba-pw")}}
+if(!data){
+  $("lock").hidden=false;$("pw").focus();
+  data=await new Promise((res)=>{$("lock").onsubmit=async(e)=>{e.preventDefault();$("lmsg").textContent="Unlocking…";
+    try{const d=await open($("pw").value);ls.set("ba-pw",$("pw").value);res(d)}catch{$("lmsg").textContent="Wrong password."}}});
+  $("lock").hidden=true;
+}
+const posts=data.posts,byId=new Map(posts.map(p=>[p.id,p]));
+const readSet=new Set(JSON.parse(ls.get("ba-read")||"[]"));
+$("u").textContent="updated "+rel(data.builtAt);
+const blogs=[...new Set(posts.map(p=>p.author).filter(Boolean))].sort((x,y)=>x.localeCompare(y));
+$("a").insertAdjacentHTML("beforeend",blogs.map(x=>`<option>${esc(x)}</option>`).join(""));
+$("a").value=ls.get("ba-author")||"";
+$("list").innerHTML=posts.map((p,i)=>{
+  const ratio=p.w&&p.h?`style="aspect-ratio:${p.w}/${p.h}"`:"";
+  const img=p.img?`<img src="${esc(p.img)}" alt="" ${i<4?'fetchpriority="high"':'loading="lazy"'} decoding="async" ${ratio} onerror="this.remove()">`:"";
+  const href=p.html?`#p=${encodeURIComponent(p.id)}`:esc(p.origin||p.link);
+  return `<article class="c${readSet.has(p.id)?" read":""}" data-id="${esc(p.id)}" data-a="${esc(p.author)}" data-t="${esc((p.title+" "+p.excerpt+" "+p.cats.join(" ")).toLowerCase())}"><a href="${href}"${p.html?"":' target="_blank" rel="noopener noreferrer"'}>${img}<div class="b"><h2>${esc(p.title)}</h2><p class="m">${esc(p.author)} · ${rel(p.date)}${p.html?'<span class="tag">Full</span>':""}</p>${p.excerpt?`<p class="x">${esc(p.excerpt)}</p>`:""}</div></a></article>`}).join("")+'<p class="msg" id="e" hidden>No matching posts.</p>';
+const cards=[...document.querySelectorAll("article.c")];
+function filter(){const s=$("q").value.trim().toLowerCase(),au=$("a").value;let n=0;
+  for(const c of cards){const ok=(!au||c.dataset.a===au)&&(!s||c.dataset.t.includes(s));c.hidden=!ok;if(ok)n++}
+  $("e").hidden=!!n;ls.set("ba-author",au)}
+$("q").oninput=filter;$("a").onchange=filter;filter();
+$("list").addEventListener("click",(e)=>{const c=e.target.closest("article.c");if(!c)return;readSet.add(c.dataset.id);c.classList.add("read");ls.set("ba-read",JSON.stringify([...readSet].slice(-600)))});
+let scrollY=0;
+function route(){
+  const m=location.hash.match(/^#p=(.+)$/),p=m&&byId.get(decodeURIComponent(m[1]));
+  if(p&&p.html){
+    if(!$("app").hidden)scrollY=window.scrollY;
+    $("app").hidden=true;$("reader").hidden=false;
+    $("rt").textContent=p.title;$("rm").textContent=`${p.author} · ${rel(p.date)}`;
+    $("orig").href=$("orig2").href=p.origin||p.link;$("body").innerHTML=p.html;
+    document.title=p.title;window.scrollTo(0,0);
+  }else{
+    $("reader").hidden=true;$("body").innerHTML="";$("app").hidden=false;document.title="Boarding Reader";window.scrollTo(0,scrollY);
+  }
+}
+$("back").onclick=()=>{if(history.state?.inApp)history.back();else location.hash=""};
+$("list").addEventListener("click",(e)=>{const a=e.target.closest('a[href^="#p="]');if(a){e.preventDefault();history.pushState({inApp:true},"",a.getAttribute("href"));route()}});
+window.addEventListener("popstate",route);window.addEventListener("hashchange",route);route();
+// Pick up the hourly rebuild when coming back to the app.
+let last=Date.now();document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-last>30*60e3&&$("reader").hidden)location.reload();last=Date.now()});
+})();
+</script></body></html>
