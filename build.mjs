@@ -13,7 +13,7 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { webcrypto as crypto } from "node:crypto";
 
 const FEED = "https://boardingarea.com/feed/";
-const PAGES = Number(process.env.FEED_PAGES || 3); // 20 posts per feed page
+const PAGES = Number(process.env.FEED_PAGES || 1); // the feed ignores ?paged=, so later pages repeat page 1
 const KEEP = 300; // headlines kept across runs
 const KEEP_FULL = 120; // most recent posts that keep full text
 const EXCERPT_CHARS = 240;

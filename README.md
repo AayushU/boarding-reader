@@ -3,7 +3,7 @@
 A fast, phone-friendly, password-locked RSS reader for BoardingArea.
 
 Every hour a GitHub Action:
-1. reads the BoardingArea feed (3 pages, 20 posts each),
+1. reads the BoardingArea feed (latest ~20 posts; history builds up hourly),
 2. follows each post's link to its original blog,
 3. reads each blog's own RSS feed (one request per blog) and, when that feed publishes the full post, keeps it for an in-app reader view (sanitized, images lazy-loaded from the blog),
 4. gzips and encrypts everything with `READER_PASSWORD` and publishes it to GitHub Pages.
