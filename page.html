@@ -14,7 +14,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,
 header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top))}
 .row{display:flex;gap:8px;max-width:760px;margin:0 auto}
 h1{font-size:18px;margin:0 auto 8px;max-width:760px;display:flex;justify-content:space-between;align-items:baseline}
-h1 small{font-weight:400;font-size:12px;color:var(--mut)}
+h1 small{font-weight:400;font-size:12px;color:var(--mut);margin-left:auto;margin-right:8px}
+#rf{padding:4px 10px;font-size:15px;line-height:1.2}
 input,select,button{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
 input,select{flex:1;min-width:0}select{flex:0 1 40%}button{cursor:pointer}
 main{max-width:760px;margin:0 auto;padding:12px 16px 40px;display:grid;gap:12px}
@@ -42,7 +43,7 @@ footer{text-align:center;color:var(--mut);font-size:12px;padding:0 16px 30px}
 </style></head><body>
 <form id="lock" hidden><h1>Boarding Reader</h1><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button>Open</button><p class="msg" id="lmsg" style="padding:0"></p></form>
 <div id="app" hidden>
-<header><h1>Boarding Reader <small id="u"></small></h1>
+<header><h1>Boarding Reader <small id="u"></small><button id="rf" type="button" aria-label="Refresh">↻</button></h1>
 <div class="row"><input id="q" type="search" placeholder="Filter headlines" autocomplete="off"><select id="a"><option value="">All blogs</option></select></div></header>
 <main id="list"></main>
 <footer>From BoardingArea and its blogs' public RSS feeds. "Full" posts are readable here; the rest open on the original blog.</footer>
@@ -56,7 +57,7 @@ footer{text-align:center;color:var(--mut);font-size:12px;padding:0 16px 30px}
 const $=(id)=>document.getElementById(id),ls={get:(k)=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:(k)=>{try{localStorage.removeItem(k)}catch{}}};
 const esc=(s)=>String(s??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 const rel=(d)=>{const s=(Date.now()-new Date(d))/1e3;if(s<3600)return Math.max(1,Math.round(s/60))+"m ago";if(s<86400)return Math.round(s/3600)+"h ago";if(s<604800)return Math.round(s/86400)+"d ago";return d.slice(0,10)};
-const buf=await fetch("data.bin",{cache:"no-cache"}).then(r=>r.arrayBuffer()).catch(()=>null);
+const buf=await fetch("data.bin?t="+Date.now(),{cache:"no-store"}).then(r=>r.arrayBuffer()).catch(()=>null);
 $("loading").hidden=true;
 if(!buf){$("loading").textContent="Couldn't load the feed. Pull to refresh.";$("loading").hidden=false;return}
 const b=new Uint8Array(buf);
@@ -78,6 +79,30 @@ if(!data){
 const posts=data.posts,byId=new Map(posts.map(p=>[p.id,p]));
 const readSet=new Set(JSON.parse(ls.get("ba-read")||"[]"));
 $("u").textContent="updated "+rel(data.builtAt);
+// Refresh: asks GitHub to rebuild now (needs a token saved on this device), then reloads when the new build lands.
+const REPO="AayushU/boarding-reader";
+$("rf").onclick=async()=>{
+  let tok=ls.get("ba-gh");
+  if(!tok){
+    tok=prompt("To fetch new posts on demand, paste a GitHub fine-grained token for boarding-reader with Actions: Read and write. It stays on this device only.\n\nCancel to just reload.");
+    if(!tok){location.reload();return}
+    tok=tok.trim();ls.set("ba-gh",tok);
+  }
+  const btn=$("rf"),u=$("u");btn.disabled=true;u.textContent="refreshing…";
+  try{
+    const r=await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/build.yml/dispatches`,{method:"POST",headers:{Authorization:"Bearer "+tok,Accept:"application/vnd.github+json"},body:JSON.stringify({ref:"main"})});
+    if(r.status===401||r.status===403||r.status===404){ls.del("ba-gh");throw new Error("token rejected, tap again to re-enter")}
+    if(!r.ok)throw new Error("GitHub said "+r.status);
+    const salt=b.slice(0,16).join();
+    for(let i=0;i<30;i++){
+      await new Promise(res=>setTimeout(res,8000));
+      u.textContent="refreshing… "+(i+1)*8+"s";
+      const nb=await fetch("data.bin?t="+Date.now(),{cache:"no-store"}).then(x=>x.arrayBuffer()).catch(()=>null);
+      if(nb&&new Uint8Array(nb).slice(0,16).join()!==salt){location.reload();return}
+    }
+    throw new Error("still building, try again shortly");
+  }catch(err){u.textContent=err.message;btn.disabled=false}
+};
 const blogs=[...new Set(posts.map(p=>p.author).filter(Boolean))].sort((x,y)=>x.localeCompare(y));
 $("a").insertAdjacentHTML("beforeend",blogs.map(x=>`<option>${esc(x)}</option>`).join(""));
 $("a").value=ls.get("ba-author")||"";
