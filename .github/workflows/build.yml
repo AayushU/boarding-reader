@@ -19,6 +19,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      - name: Check password secret
+        env:
+          READER_PASSWORD: ${{ secrets.READER_PASSWORD }}
+        run: |
+          if [ -z "$READER_PASSWORD" ]; then
+            echo "::error::Add a READER_PASSWORD secret (Settings > Secrets and variables > Actions), then re-run."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
