@@ -9,7 +9,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@mozilla/readability": "^0.5.0",
     "fast-xml-parser": "^4.5.7",
+    "jsdom": "^25.0.1",
+    "robots-parser": "^3.0.1",
     "sanitize-html": "^2.18.1"
   },
   "private": true,

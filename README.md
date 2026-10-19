@@ -6,7 +6,8 @@ Every hour a GitHub Action:
 1. reads the BoardingArea feed (latest ~20 posts; history builds up hourly),
 2. follows each post's link to its original blog,
 3. reads each blog's own RSS feed (one request per blog) and, when that feed publishes the full post, keeps it for an in-app reader view (sanitized, images lazy-loaded from the blog),
-4. gzips and encrypts everything with `READER_PASSWORD` and publishes it to GitHub Pages.
+4. for posts still without full text, fetches the article page once (when that blog's robots.txt allows it, up to 30 per run) and keeps a reader-mode copy,
+5. gzips and encrypts everything with `READER_PASSWORD` and publishes it to GitHub Pages.
 
 Posts whose blog feed only has a summary show the excerpt and open the original. Older posts carry forward from the previous build (300 headlines, full text for the latest 120). The page is `noindex` with a `Disallow: /` robots.txt, and the data is unreadable without the password.
 

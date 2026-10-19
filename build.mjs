@@ -4,6 +4,9 @@
 // 3. Reads each blog's own RSS feed; when it publishes the full post
 //    (content:encoded), that text is shown in the reader. Otherwise the
 //    card shows the excerpt and links to the original.
+// 4. For posts still without full text, fetches the article page once (if the
+//    blog's robots.txt allows it) and keeps a reader-mode copy, like a
+//    personal read-later app. Each article is fetched only once.
 // Output is gzipped and AES-GCM encrypted with READER_PASSWORD, so the
 // published files are unreadable without it.
 import { XMLParser } from "fast-xml-parser";
@@ -11,12 +14,16 @@ import sanitizeHtml from "sanitize-html";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { webcrypto as crypto } from "node:crypto";
+import { Readability } from "@mozilla/readability";
+import { JSDOM, VirtualConsole } from "jsdom";
+import robotsParser from "robots-parser";
 
 const FEED = "https://boardingarea.com/feed/";
 const PAGES = Number(process.env.FEED_PAGES || 1); // the feed ignores ?paged=, so later pages repeat page 1
 const KEEP = 300; // headlines kept across runs
 const KEEP_FULL = 120; // most recent posts that keep full text
 const EXCERPT_CHARS = 240;
+const MAX_PAGE_FETCHES = 30; // article pages per run
 const UA = "PersonalFeedReader/1.0 (hourly RSS fetch; personal use)";
 const OUT = "dist";
 const PASSWORD = process.env.READER_PASSWORD || "";
@@ -200,6 +207,7 @@ for (const p of fresh) {
   if (old?.origin) {
     p.origin = old.origin;
     p.html = old.html || "";
+    p.tried = old.tried || false;
     continue;
   }
   p.origin = await resolveOrigin(p.link);
@@ -232,6 +240,57 @@ for (const [host, posts] of needs) {
   if (!FIXTURE_DIR) await sleep(1000);
 }
 
+// Reader-mode copies for the rest, respecting each blog's robots.txt.
+const robots = new Map();
+async function allowed(url) {
+  const host = new URL(url).origin;
+  if (!robots.has(host)) {
+    let txt = "";
+    try {
+      txt = FIXTURE_DIR ? "" : await fetchText(`${host}/robots.txt`);
+    } catch {}
+    robots.set(host, robotsParser(`${host}/robots.txt`, txt));
+  }
+  return robots.get(host).isAllowed(url, "PersonalFeedReader") !== false;
+}
+
+async function fetchPage(url) {
+  if (FIXTURE_DIR) return readFile(`${FIXTURE_DIR}/${url.replace(/^https?:\/\//, "").replace(/[^a-z0-9.]+/gi, "_")}.html`, "utf8");
+  const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "text/html" } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+
+function extract(html, url) {
+  const dom = new JSDOM(html, { url, virtualConsole: new VirtualConsole() });
+  const doc = dom.window.document;
+  // Lazy-load plugins: promote real image URLs before Readability drops the placeholders.
+  for (const img of doc.querySelectorAll("img")) {
+    const real = img.getAttribute("data-lazy-src") || img.getAttribute("data-src");
+    if (real) img.setAttribute("src", real);
+    const set = img.getAttribute("data-lazy-srcset") || img.getAttribute("data-srcset");
+    if (set) img.setAttribute("srcset", set);
+  }
+  const art = new Readability(doc).parse();
+  dom.window.close();
+  return art?.content && art.textContent?.trim().length > 600 ? clean(art.content, url) : "";
+}
+
+let pages = 0;
+for (const p of fresh) {
+  if (p.html || !p.origin || p.tried || pages >= MAX_PAGE_FETCHES) continue;
+  try {
+    if (!(await allowed(p.origin))) continue;
+    pages++;
+    p.tried = true; // don't refetch a page that had nothing usable
+    p.html = extract(await fetchPage(p.origin), p.origin);
+    if (p.html) full++;
+  } catch (e) {
+    console.warn(`${p.origin}: ${e.message}`);
+  }
+  if (!FIXTURE_DIR) await sleep(1500);
+}
+
 const byId = new Map();
 for (const p of [...fresh, ...prev.values()]) if (p?.id && !byId.has(p.id)) byId.set(p.id, p);
 const posts = [...byId.values()].sort((a, b) => b.date.localeCompare(a.date)).slice(0, KEEP);
@@ -249,4 +308,4 @@ await writeFile(
   JSON.stringify({ name: "Boarding Reader", short_name: "Boarding", start_url: ".", display: "standalone", background_color: "#141414", theme_color: "#141414" })
 );
 const withText = posts.filter((p) => p.html).length;
-console.log(`Built ${posts.length} posts; ${withText} with full text (${full} new this run, ${needs.size} blog feeds read).`);
+console.log(`Built ${posts.length} posts; ${withText} with full text (${full} new this run, ${needs.size} blog feeds and ${pages} article pages read).`);
