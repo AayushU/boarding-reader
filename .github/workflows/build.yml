@@ -1,7 +1,8 @@
 name: Build reader
 on:
   schedule:
-    - cron: "7 * * * *" # hourly
+    # GitHub often skips or delays scheduled runs, so ask every 15 minutes to land at least hourly.
+    - cron: "4,19,34,49 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
