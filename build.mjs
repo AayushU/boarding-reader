@@ -90,6 +90,12 @@ function key(u) {
   }
 }
 
+// Some items arrive with a missing or malformed pubDate; never let one post break the build.
+function toDate(v) {
+  const d = new Date(decode(v));
+  return isNaN(d) ? new Date().toISOString() : d.toISOString();
+}
+
 function toPost(it) {
   const media = arr(it["media:content"])[0] || arr(it["media:thumbnail"])[0];
   const enc = arr(it.enclosure).find((e) => /^image\//.test(e["@type"] || "image/"));
@@ -100,7 +106,7 @@ function toPost(it) {
     link,
     origin: "",
     author: decode(it["dc:creator"]),
-    date: new Date(it.pubDate).toISOString(),
+    date: toDate(it.pubDate ?? it["dc:date"]),
     excerpt: excerpt(it.description),
     img: media?.["@url"] || enc?.["@url"] || "",
     w: Number(media?.["@width"]) || null,
